@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- FIX: Add Content Security Policy to allow unpkg.com -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://unpkg.com;">
+    <!-- <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https://unpkg.com;"> -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'inline-speculation-rules' chrome-extension://0854f948-9723-431d-8e78-26def4433d5f/ https://turab45.github.io;">
+
     <title>NiftiView Web</title>
     <!-- Load nifti-reader-js from a CDN -->
     <script src="https://unpkg.com/nifti-reader-js@0.5.4/release/current/nifti-reader.js"></script>
