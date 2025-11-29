@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIfTI Slice Explorer</title>
+    <!-- Load nifti-reader-js from a CDN -->
+    <script src="https://unpkg.com/nifti-reader-js@0.5.4/release/current/nifti-reader.js"></script>
+    <style>
+        :root {
+            --bg-dark: #1a1a1a;
+            --bg-panel: #2a2a2a;
+            --accent: #4a90e2;
+            --text-main: #e0e0e0;
+            --text-muted: #a0a0a0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            background-color: var(--bg-panel);
+            padding: 15px 20px;
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 60px;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .file-upload-btn {
+            background-color: var(--accent);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+            display: inline-block;
+        }
+        
+        .file-upload-btn:hover {
+            background-color: #357abd;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        /* Main Layout */
+        .container {
+            display: flex;
+            flex: 1;
+            height: calc(100vh - 60px);
+            overflow: hidden;
+        }
+
+        /* Sidebar (Filmstrip) */
+        .sidebar {
+            width: 200px;
+            background-color: #222;
+            border-right: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .sidebar-title {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+
+        .thumbnail-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .thumbnail {
+            width: 100%;
+            aspect-ratio: 1;
+            background-color: black;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: border-color 0.2s;
+            position: relative;
+        }
+
+        .thumbnail canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .thumbnail:hover {
+            border-color: #666;
+        }
+
+        .thumbnail.active {
+            border-color: var(--accent);
+        }
+
+        .thumb-label {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            font-size: 10px;
+            padding: 2px 4px;
+            border-radius: 2px;
+        }
+
+        /* Main View Area */
+        .main-view {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background-color: #000;
+        }
+
+        .canvas-wrapper {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #mainCanvas {
+            max-width: 95%;
+            max-height: 95%;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            transition: transform 0.1s ease-out; /* Smooth zoom */
+        }
+
+        /* Toolbar */
+        .toolbar {
+            height: 60px;
+            background-color: var(--bg-panel);
+            border-top: 1px solid #444;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 20px;
+            justify-content: center;
+        }
+
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        input[type="range"] {
+            width: 120px;
+            cursor: pointer;
+        }
+
+        button.btn-tool {
+            background-color: #444;
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        button.btn-tool:hover {
+            background-color: #555;
+        }
+
+        button.btn-primary {
+            background-color: var(--accent);
+        }
+        
+        button.btn-primary:hover {
+            background-color: #357abd;
+        }
+
+        /* Orientation tabs */
+        .orientation-tabs {
+            display: flex;
+            margin-bottom: 10px;
+            background: #333;
+            border-radius: 4px;
+            padding: 2px;
+        }
+
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 5px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            border-radius: 2px;
+            color: #aaa;
+        }
+
+        .tab.active {
+            background-color: #555;
+            color: white;
+            font-weight: bold;
+        }
+
+        /* Loading Overlay */
+        #loading {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            color: white;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 1000;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--accent);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Empty State */
+        .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #555;
+        }
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 10px;
+            fill: #444;
+        }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+        </svg>
+        NIfTI Viewer
+    </h1>
+    <div>
+        <label for="file-input" class="file-upload-btn">Upload .nii / .nii.gz</label>
+        <input type="file" id="file-input" accept=".nii,.nii.gz">
+    </div>
+</header>
+
+<div class="container">
+    
+    <!-- Left Sidebar: Slice Filmstrip -->
+    <div class="sidebar">
+        <div class="sidebar-title">Slice Preview</div>
+        
+        <!-- Orientation Switcher -->
+        <div class="orientation-tabs">
+            <div class="tab active" onclick="setOrientation('axial')">Axial</div>
+            <div class="tab" onclick="setOrientation('sagittal')">Sag</div>
+            <div class="tab" onclick="setOrientation('coronal')">Cor</div>
+        </div>
+
+        <div id="thumbnail-container" class="thumbnail-container">
+            <!-- Thumbnails injected here by JS -->
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-view">
+        <div class="canvas-wrapper" id="canvas-wrapper">
+            <div class="empty-state" id="empty-state">
+                <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zm-5-7l-3 3.72L9 13l-3 4h12l-4-5z"/></svg>
+                <p>Upload a .nii file to start</p>
+            </div>
+            <canvas id="mainCanvas"></canvas>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            
+            <div class="tool-group">
+                <label>Slice: <span id="slice-val">0</span></label>
+                <input type="range" id="slice-slider" min="0" max="100" value="0" disabled>
+            </div>
+
+            <div class="tool-group">
+                <label>Contrast</label>
+                <input type="range" id="contrast-slider" min="0.1" max="5" step="0.1" value="1" disabled>
+            </div>
+
+            <div class="tool-group">
+                <button class="btn-tool" id="btn-zoom-in" disabled>+</button>
+                <button class="btn-tool" id="btn-zoom-out" disabled>-</button>
+                <button class="btn-tool" id="btn-reset" disabled>Reset</button>
+            </div>
+
+            <div class="tool-group" style="margin-left: auto;">
+                <button class="btn-tool btn-primary" id="btn-download" disabled>Download Slice</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="loading">
+    <div class="spinner"></div>
+    <div id="loading-text">Parsing NIfTI file...</div>
+</div>
+
+<script>
+    // --- State Management ---
+    let niftiHeader = null;
+    let niftiImage = null;
+    let niftiData = null; // Typed array (Int16, Float32, etc)
+    let dims = []; // [dim[1], dim[2], dim[3]] -> [x, y, z]
+    let currentSlice = 0;
+    let maxSlice = 0;
+    let orientation = 'axial'; // 'axial', 'sagittal', 'coronal'
+    let scale = 1;
+    let contrast = 1; // Actually brightness multiplier for simplicity
+    
+    // Elements
+    const fileInput = document.getElementById('file-input');
+    const mainCanvas = document.getElementById('mainCanvas');
+    const ctx = mainCanvas.getContext('2d');
+    const slider = document.getElementById('slice-slider');
+    const sliceValDisplay = document.getElementById('slice-val');
+    const thumbContainer = document.getElementById('thumbnail-container');
+    const loadingOverlay = document.getElementById('loading');
+    const emptyState = document.getElementById('empty-state');
+    const contrastSlider = document.getElementById('contrast-slider');
+    
+    // --- Event Listeners ---
+    fileInput.addEventListener('change', handleFileUpload);
+    
+    slider.addEventListener('input', (e) => {
+        currentSlice = parseInt(e.target.value);
+        updateSliceDisplay();
+    });
+
+    contrastSlider.addEventListener('input', (e) => {
+        contrast = parseFloat(e.target.value);
+        drawMainSlice();
+    });
+
+    document.getElementById('btn-zoom-in').addEventListener('click', () => {
+        scale += 0.2;
+        applyZoom();
+    });
+    
+    document.getElementById('btn-zoom-out').addEventListener('click', () => {
+        if(scale > 0.4) scale -= 0.2;
+        applyZoom();
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+        scale = 1;
+        applyZoom();
+        contrast = 1;
+        contrastSlider.value = 1;
+        drawMainSlice();
+    });
+
+    document.getElementById('btn-download').addEventListener('click', downloadSlice);
+
+    // --- File Handling ---
+    function handleFileUpload(evt) {
+        const file = evt.target.files[0];
+        if (!file) return;
+
+        showLoading(true);
+        emptyState.style.display = 'none';
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                let buffer = e.target.result;
+                
+                // 1. Check for compression and decompress if needed
+                // nifti.decompress returns the raw ArrayBuffer in this version
+                if (nifti.isCompressed(buffer)) {
+                    buffer = nifti.decompress(buffer);
+                }
+
+                // 2. Read Header from the (now definitely uncompressed) buffer
+                if (nifti.isNIFTI1(buffer)) {
+                    niftiHeader = nifti.readHeader(buffer);
+                } else if (nifti.isNIFTI2(buffer)) {
+                     niftiHeader = nifti.readHeader(buffer);
+                } else {
+                    // Attempt to read anyway if valid
+                     niftiHeader = nifti.readHeader(buffer);
+                }
+
+                if (!niftiHeader) {
+                    throw new Error("Unable to parse NIfTI header.");
+                }
+
+                // 3. Read Image Data using the same buffer
+                niftiImage = nifti.readImage(niftiHeader, buffer);
+
+                // Process Raw Data into Typed Array
+                processRawData();
+                
+                // Set Dimensions
+                // NIfTI dims are usually: dims[1]=x, dims[2]=y, dims[3]=z (slices)
+                if (niftiHeader.dims) {
+                    dims = niftiHeader.dims.slice(1, 4); 
+                } else {
+                    throw new Error("Header dimensions missing");
+                }
+                
+                // Setup Viewer
+                enableControls();
+                setOrientation('axial'); // Default view
+                
+            } catch (err) {
+                console.error(err);
+                alert("Error parsing NIfTI file: " + err.message);
+                emptyState.style.display = 'block';
+            } finally {
+                showLoading(false);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function processRawData() {
+        // Convert raw bytes to appropriate typed array based on datatype code
+        // Common codes: 2=uint8, 4=int16, 8=int32, 16=float32, 64=float64
+        const raw = niftiImage; // This is an ArrayBuffer
+        const type = niftiHeader.datatypeCode;
+
+        if (type === 2) niftiData = new Uint8Array(raw);
+        else if (type === 4) niftiData = new Int16Array(raw);
+        else if (type === 8) niftiData = new Int32Array(raw);
+        else if (type === 16) niftiData = new Float32Array(raw);
+        else if (type === 64) niftiData = new Float64Array(raw);
+        else if (type === 512) niftiData = new Uint16Array(raw);
+        else {
+            // Fallback attempt or alert
+            console.warn("Unsupported or complex NIfTI datatype code: " + type + ". Defaulting to Uint8.");
+            niftiData = new Uint8Array(raw); 
+        }
+    }
+
+    // --- View & Slicing Logic ---
+
+    function setOrientation(newOrientation) {
+        if (!dims || dims.length < 3) return;
+
+        orientation = newOrientation;
+        
+        // Update tabs UI
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelector(`.tab[onclick="setOrientation('${newOrientation}')"]`).classList.add('active');
+
+        // Determine max slice based on orientation
+        // Axial (Top-down): Slices along Z axis (Index 2)
+        // Sagittal (Side): Slices along X axis (Index 0)
+        // Coronal (Front): Slices along Y axis (Index 1)
+        
+        if (orientation === 'axial') maxSlice = dims[2];
+        else if (orientation === 'sagittal') maxSlice = dims[0];
+        else if (orientation === 'coronal') maxSlice = dims[1];
+
+        // Reset Slider
+        slider.max = maxSlice - 1;
+        currentSlice = Math.floor(maxSlice / 2);
+        slider.value = currentSlice;
+        
+        // Generate Filmstrip
+        generateThumbnails();
+        updateSliceDisplay();
+    }
+
+    function updateSliceDisplay() {
+        sliceValDisplay.textContent = currentSlice + " / " + (maxSlice - 1);
+        slider.value = currentSlice;
+        
+        // Highlight active thumbnail
+        document.querySelectorAll('.thumbnail').forEach(t => t.classList.remove('active'));
+        const activeThumb = document.getElementById(`thumb-${currentSlice}`);
+        if(activeThumb) activeThumb.classList.add('active'); 
+
+        drawMainSlice();
+    }
+
+    // --- Rendering Core ---
+
+    function getVoxelValue(x, y, z) {
+        // Bounds check
+        if (x < 0 || x >= dims[0] || y < 0 || y >= dims[1] || z < 0 || z >= dims[2]) return 0;
+        // 1D array offset: x + (y * width) + (z * width * height)
+        // Note: This assumes standard NIfTI ordering (XYZ)
+        const offset = x + (y * dims[0]) + (z * dims[0] * dims[1]);
+        
+        if (offset < 0 || offset >= niftiData.length) return 0;
+        
+        return niftiData[offset];
+    }
+
+    function drawSliceToCanvas(canvasCtx, sliceIndex, width, height, isThumb = false) {
+        // Create ImageData container
+        const imgData = canvasCtx.createImageData(width, height);
+        const pixels = imgData.data; // R,G,B,A, R,G,B,A...
+
+        let ptr = 0;
+        
+        for (let row = 0; row < height; row++) {
+            for (let col = 0; col < width; col++) {
+                let val = 0;
+                
+                // Map 2D Coordinates to 3D Voxel Coordinates based on Orientation
+                // Note: We often flip 'row' (height-1-row) to match radiological conventions where Y goes up
+                
+                if (orientation === 'axial') {
+                    // x=col, y=row, z=sliceIndex
+                    val = getVoxelValue(col, height - 1 - row, sliceIndex);
+                } else if (orientation === 'sagittal') {
+                    // x=sliceIndex, y=col, z=row
+                    // Sagittal views often tricky: x=slice, y=col (anterior-posterior), z=row (inferior-superior)
+                    val = getVoxelValue(sliceIndex, col, height - 1 - row);
+                } else if (orientation === 'coronal') {
+                    // x=col, y=sliceIndex, z=row
+                    val = getVoxelValue(col, sliceIndex, height - 1 - row);
+                }
+
+                // Normalize for display (Simple linear scaling)
+                // Assuming typical MRI range 0-4096, mapping to 0-255
+                // Multiplying by contrast factor
+                
+                let displayVal = val * (0.15 * contrast); 
+                
+                // Clamp
+                if (displayVal > 255) displayVal = 255;
+                if (displayVal < 0) displayVal = 0;
+
+                pixels[ptr] = displayVal;     // R
+                pixels[ptr + 1] = displayVal; // G
+                pixels[ptr + 2] = displayVal; // B
+                pixels[ptr + 3] = 255;        // Alpha (Opaque)
+                ptr += 4;
+            }
+        }
+        
+        canvasCtx.putImageData(imgData, 0, 0);
+    }
+
+    function drawMainSlice() {
+        if (!niftiData) return;
+
+        let w, h;
+        if (orientation === 'axial') { w = dims[0]; h = dims[1]; }
+        else if (orientation === 'sagittal') { w = dims[1]; h = dims[2]; }
+        else if (orientation === 'coronal') { w = dims[0]; h = dims[2]; }
+
+        mainCanvas.width = w;
+        mainCanvas.height = h;
+
+        drawSliceToCanvas(ctx, currentSlice, w, h);
+    }
+
+    // --- Thumbnails ---
+
+    function generateThumbnails() {
+        thumbContainer.innerHTML = '';
+        
+        let w, h;
+        if (orientation === 'axial') { w = dims[0]; h = dims[1]; }
+        else if (orientation === 'sagittal') { w = dims[1]; h = dims[2]; }
+        else if (orientation === 'coronal') { w = dims[0]; h = dims[2]; }
+
+        // We can't render every single slice for large files (browser will freeze).
+        // We render every Nth slice (Decimation).
+        const step = Math.max(1, Math.ceil(maxSlice / 20)); // Aim for ~20 thumbnails, ensure at least 1
+        
+        for (let i = 0; i < maxSlice; i += step) {
+            const div = document.createElement('div');
+            div.className = 'thumbnail';
+            div.id = `thumb-${i}`;
+            
+            const cvs = document.createElement('canvas');
+            cvs.width = w;
+            cvs.height = h;
+            
+            // Draw immediately (small performance hit but simpler)
+            const tCtx = cvs.getContext('2d');
+            drawSliceToCanvas(tCtx, i, w, h, true);
+
+            const label = document.createElement('div');
+            label.className = 'thumb-label';
+            label.textContent = i;
+
+            div.appendChild(cvs);
+            div.appendChild(label);
+            
+            // Click to jump
+            div.onclick = () => {
+                currentSlice = i;
+                updateSliceDisplay();
+            };
+
+            thumbContainer.appendChild(div);
+        }
+    }
+
+    // --- Utilities ---
+
+    function applyZoom() {
+        mainCanvas.style.transform = `scale(${scale})`;
+    }
+
+    function downloadSlice() {
+        const link = document.createElement('a');
+        link.download = `slice_${orientation}_${currentSlice}.png`;
+        link.href = mainCanvas.toDataURL();
+        link.click();
+    }
+
+    function showLoading(show) {
+        loadingOverlay.style.display = show ? 'flex' : 'none';
+    }
+
+    function enableControls() {
+        document.querySelectorAll('button, input').forEach(el => el.disabled = false);
+    }
+
+</script>
+
+</body>
+</html>
